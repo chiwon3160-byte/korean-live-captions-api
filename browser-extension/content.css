@@ -1,0 +1,7 @@
+.local-caption-comment-ko {
+  display: block !important; margin: 5px 0 9px !important; padding: 5px 8px !important;
+  border-left: 2px solid #6bc7a1 !important; color: inherit !important;
+  background: rgba(90,170,140,.12) !important;
+  font: 14px/1.55 "Malgun Gothic",sans-serif !important;
+  white-space: pre-wrap !important; overflow-wrap: anywhere !important; user-select: text !important;
+}

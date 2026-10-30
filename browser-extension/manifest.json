@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "틱톡 댓글 한국어 · 로컬 자막",
+  "version": "0.1.0",
+  "description": "보이는 틱톡 댓글을 내 PC 자막앱에서 번역합니다.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.tiktok.com/*", "http://127.0.0.1/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_popup": "popup.html"},
+  "content_scripts": [{
+    "matches": ["https://www.tiktok.com/*"],
+    "js": ["logic.js", "content.js"], "css": ["content.css"], "run_at": "document_idle"
+  }],
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src http://127.0.0.1:17864"}
+}

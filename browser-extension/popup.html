@@ -1,0 +1,9 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>틱톡 댓글 한국어</title><link rel="stylesheet" href="popup.css"></head>
+<body><h1>틱톡 댓글 한국어</h1><p>화면에 보이는 댓글을 자막앱의 현재 설정으로 번역합니다. 유료 API 댓글 전송을 켜면 원문이 선택한 제공사로 전송됩니다.</p>
+<label for="token">자막앱의 연결 코드 <small>처음 한 번</small></label>
+<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="앱에서 복사한 코드 붙여 넣기">
+<div class="actions"><button id="start">저장하고 켜기</button><button id="pause">일시정지</button></div>
+<p id="status" role="status">확인 중…</p>
+<p class="note">음성 자막이 먼저 처리됩니다. 댓글 번역은 조금 늦을 수 있습니다. 계정명·좋아요 수는 보내지 않으며 댓글 속 @멘션은 바꿔 보냅니다.</p>
+<p class="note">원문·번역문은 확장 프로그램에서 파일로 저장하지 않습니다. 일시정지하면 표시한 번역도 숨깁니다.</p>
+<script src="popup.js"></script></body></html>
