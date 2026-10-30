@@ -28,6 +28,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\launch-api.ps1
 
 ## API 키를 넣고 시작하기
 
+### 본인의 OpenAI API 키를 준비합니다
+
+1. [OpenAI Platform](https://platform.openai.com/)에 본인 계정으로 로그인합니다. ChatGPT 구독과 API 사용료는 별도입니다.
+2. Platform의 조직 결제 설정에서 사용 가능한 크레딧이나 결제 수단을 확인합니다. 결제가 필요하면 금액과 자동 충전 여부를 읽고 직접 선택합니다. 가입만으로 무료 API 사용이 보장되지는 않습니다.
+3. 프로젝트 선택 메뉴에서 본인 번역앱용 프로젝트를 선택하거나 만듭니다. 회사 관리 계정에서 권한이 없다면 관리자에게 문의합니다.
+4. 선택한 프로젝트의 **API Keys → Create new secret key**에서 알아보기 쉬운 이름으로 키를 만듭니다. 키 권한을 제한하는 경우 사용할 번역 API에 필요한 권한을 허용해야 하며, Read Only 키는 번역 요청에 맞지 않습니다.
+5. 표시된 키를 직접 복사하여 앱의 가려진 API 키 입력칸에 붙여 넣습니다. 새 키는 다시 전체 값을 볼 수 없으므로 필요하면 본인의 안전한 비밀값 보관 도구에 보관합니다. Codex 채팅·GitHub·스크린샷에는 넣지 않습니다.
+6. 프로젝트 **Limits → Spend → Edit spend limit**에서 원하는 월별 금액을 정하고, 사용 차단을 원하면 **Enforce a hard limit**을 켠 뒤 저장합니다. 알림만 설정하면 요청이 차단되지 않습니다. 적용 지연으로 소액 초과할 수 있고 월마다 초기화됩니다.
+7. 앱에서 설정을 적용하고 짧게 번역한 뒤 중지합니다. [Usage](https://platform.openai.com/usage)에서 프로젝트를 선택하여 사용량을 확인합니다. 앱 예상 비용과 최종 청구액은 다를 수 있습니다.
+
+현재 배포본에는 체험용 API 키가 포함되지 않습니다. 체험 지원 여부와 별개로 본인 키를 넣어 사용할 수 있습니다.
+
+공식 안내: [프로젝트·키 발급](https://help.openai.com/en/articles/9186755-managing-projects-in-the-api-platform), [월별 강제 한도](https://developers.openai.com/api/docs/guides/spend-limits). 화면 이름은 계정·권한·제품 변경에 따라 다를 수 있습니다.
+
+### 앱에 입력합니다
+
 1. 앱의 **소리·표시 설정**에서 OpenAI와 **Luna 6**가 선택되어 있는지 확인합니다. 키가 없는 첫 실행에는 설정창이 열립니다.
 2. [OpenAI API 키 관리](https://platform.openai.com/api-keys)에서 준비한 **본인의 키**를 API 키 칸에 붙여 넣습니다. 키는 가려서 표시됩니다.
 3. **번역 설정 적용 → 닫기 → 번역 시작**을 누릅니다.

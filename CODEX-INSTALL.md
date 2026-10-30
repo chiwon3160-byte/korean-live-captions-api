@@ -4,7 +4,7 @@
 
 ## 현재 상태와 완료 기준
 
-- 배포 원본: https://github.com/chiwon3160-byte/korean-live-captions-api (비공개). 접근 권한이 없으면 사용자가 초대를 수락하도록 안내하거나 전달받은 ZIP 폴더를 사용합니다. 인증 우회나 원격 저장소 공개 전환은 하지 않습니다.
+- 배포 원본: https://github.com/chiwon3160-byte/korean-live-captions-api (공개). 안내 기본 순서는 동료 본인의 Google 계정으로 GitHub 가입·로그인 후 이 링크를 Codex에 전달하는 것입니다. 공개 저장소 읽기·다운로드는 로그인 없이도 가능하며 별도 초대는 필요하지 않습니다. 가입·로그인은 사용자가 직접 합니다. 저장소에 쓰기 권한을 요청하지 않습니다.
 - 이 배포는 Windows 소스판입니다. macOS 완성 앱이 아닙니다. macOS에서는 설치뿐 아니라 음성 캡처·단축키·시작 오류·의존성의 이식이 필요할 수 있습니다.
 - 기본 번역은 Luna 6 (`gpt-6-luna`, reasoning `none`), 선택은 Realtime (`gpt-realtime-translate`)입니다. Realtime은 로컬 Whisper 추론을 쓰지 않습니다. Luna는 현재 로컬 Whisper CUDA에 의존합니다.
 - 성공은 의존성 설치가 아니라 실제 출력 소리 수집, 한국어 자막, 중지 후 연결 종료, 재실행까지 확인한 상태입니다. Mac을 직접 시험하지 않았으면 Mac 지원 완료라고 쓰지 않습니다.
