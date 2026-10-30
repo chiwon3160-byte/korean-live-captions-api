@@ -4,6 +4,8 @@ PC에서 재생하는 영어·스페인어 영상의 소리를 인식하고 한�
 
 ## 처음 설치할 때
 
+**Codex에 설치를 맡기는 경우:** [START-HERE.txt](START-HERE.txt)의 문장을 붙여 넣습니다. 상세 설치·Mac 이식 지침은 [CODEX-INSTALL.md](CODEX-INSTALL.md), 순서별 안내는 [설치 슬라이드](CODEX-INSTALL-SLIDES.html)에 있습니다. 아래는 현재 Windows 수동 설치 절차입니다. 메타프롬프트 제공이 Mac 지원 완료를 뜻하지는 않습니다.
+
 필요한 환경은 **Windows 11 64비트, Python 3.12 64비트, NVIDIA GPU와 정상 작동하는 드라이버**입니다. Python 설치 시 Python Launcher를 포함하세요. API 번역을 사용해도 PC 음성 인식용 GPU가 필요합니다. CPU 전용·AMD/Intel GPU·Mac은 현재 지원하지 않습니다.
 
 1. 배포 ZIP을 원하는 로컬 폴더에 모두 풉니다. ZIP 안에서 바로 실행하지 마세요.

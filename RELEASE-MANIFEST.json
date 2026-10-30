@@ -9,9 +9,21 @@
       "bytes": 68,
       "sha256": "56962d34bf17273ab7651f82f7b2ff489ef2923060c50c61e9ed1bfc4ca84f7b"
     },
+    "CODEX-INSTALL-SLIDES.html": {
+      "bytes": 70976,
+      "sha256": "6087fab5562023cc8353c71405b0916ba9dd49fb03f31d870fbfca288408f4d5"
+    },
+    "CODEX-INSTALL.md": {
+      "bytes": 11232,
+      "sha256": "90d5335a7e72ddd315fb72af99e45b7b076a05402dada059c7a3c6c8150a0a71"
+    },
     "README.md": {
-      "bytes": 7595,
-      "sha256": "50645d56d306cea47e3fee392bedc3f9b21b4aeac25e4e326bee98d0a03bf427"
+      "bytes": 7997,
+      "sha256": "55a34a9fd49c85f59e8a6fcef8a532d07cb93e32f4689f392df2295090a2a5a7"
+    },
+    "START-HERE.txt": {
+      "bytes": 1045,
+      "sha256": "29c9e142855ef1003d61611d8239f18968cfb8439c855cc2dc77b507e4c04150"
     },
     "Start API Captions.vbs": {
       "bytes": 321,
