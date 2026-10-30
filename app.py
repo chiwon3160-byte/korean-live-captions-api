@@ -113,17 +113,27 @@ class Controller:
                 if provider not in PROVIDERS:
                     raise ValueError('provider')
                 key = resolve_api_key(provider, settings.get('api_key', ''))
+                if (not key and provider in ('openai', 'realtime')
+                        and self.translation_provider in ('openai', 'realtime')):
+                    # Same OpenAI credential only, retained in memory for mode
+                    # switching after the password field has been cleared.
+                    key = getattr(self.engine, '_api_key', '')
                 model = settings.get('model', '').strip()
                 if not key or not model:
                     self.window.set_error('선택한 API의 모델과 키를 입력해 주세요. 키는 저장하지 않습니다.')
                     return False
-                effort = settings.get('reasoning_effort') or ('low' if model == 'gpt-6.1-sol' else 'none')
-                candidate = RemoteEngine(provider=provider, model=model, api_key=key, reasoning_effort=effort)
-                candidate.usage_callback = self.record_api_usage
-                description = PROVIDERS[provider]['label'] + ' · ' + model
-                if provider == 'openai':
-                    description += ' · 추론 ' + effort
-                description += ' · 유료 API'
+                if provider == 'realtime':
+                    from realtime_engine import RealtimeEngine
+                    candidate = RealtimeEngine(model=model, api_key=key)
+                    description = 'OpenAI Realtime · ' + model + ' · 음성 직접 전송'
+                else:
+                    effort = settings.get('reasoning_effort') or ('low' if model == 'gpt-6.1-sol' else 'none')
+                    candidate = RemoteEngine(provider=provider, model=model, api_key=key, reasoning_effort=effort)
+                    candidate.usage_callback = self.record_api_usage
+                    description = PROVIDERS[provider]['label'] + ' · ' + model
+                    if provider == 'openai':
+                        description += ' · 추론 ' + effort
+                    description += ' · 유료 API'
             # Never move pending comments submitted under a previous mode to a new provider.
             with self.comments.lock:
                 while True:
@@ -137,7 +147,7 @@ class Controller:
             self.pending_api_setup = False
             self.translation_provider = provider
             self.translation_description = description
-            self.remote_comments = provider != 'local' and bool(settings.get('comments', False))
+            self.remote_comments = provider not in ('local', 'realtime') and bool(settings.get('comments', False))
             self.window.clear_captions()
             if hasattr(self.window, 'set_translation_mode'):
                 self.window.set_translation_mode(provider, description)
@@ -163,6 +173,9 @@ class Controller:
 
     def process_comment(self, job):
         # Called only by the single model worker. Comments never touch speech context.
+        if self.translation_provider == 'realtime':
+            self.comments.finish(job['id'], error='Realtime은 음성 번역 전용입니다. 댓글은 OpenAI 텍스트 번역 모델을 선택해 주세요.')
+            return
         if self.translation_provider != 'local' and not self.remote_comments:
             self.comments.finish(job['id'], error='유료 API 댓글 전송이 꺼져 있습니다. 앱의 번역 설정에서 별도로 켜 주세요.')
             return
@@ -228,16 +241,54 @@ class Controller:
         self.window.clear_captions()
         self.window.set_status('음성 인식 준비 · ' + self.translation_description)
         self.clear_queue()
-        self.jobs.put(('load', self.session, None, language, time.monotonic()))
+        if self.translation_provider == 'realtime':
+            sid = self.session
+            self.window.set_status('Realtime 연결 중 · 연결 준비 후 소리를 전송합니다')
+            try:
+                self.engine.start(
+                    on_caption=lambda result: self.emit_realtime_caption(sid, result),
+                    on_error=lambda message: self.events.error.emit(sid, message),
+                    on_ready=lambda: self.events.ready.emit(sid),
+                    on_usage=self.record_api_usage,
+                )
+            except Exception:
+                self.on_error(sid, 'Realtime을 시작하지 못했습니다. 연결 설정과 설치 상태를 확인해 주세요.')
+        else:
+            self.jobs.put(('load', self.session, None, language, time.monotonic()))
         self.write_runtime_status()
 
-    def on_ready(self, session: int):
+    def emit_realtime_caption(self, session, result):
+        # Transport owns bounded text accumulation. Never fabricate a source
+        # transcription or an end-of-speech latency for continuous translation.
+        text = result.get('korean')
+        if not isinstance(text, str) or not text:
+            return
+        self.events.result.emit(session, {
+            'realtime': True, 'original': '', 'korean': text,
+            'language': 'auto', 'end_delay': float('nan'), 'uncertain': False,
+            'subtitle_unit_id': result.get('segment_id'),
+            'unit_complete': not result.get('provisional', True),
+        })
+
+    def feed_realtime_audio(self, session, engine, audio, rate):
         if session != self.session or not self.running:
+            return
+        if audio.size:
+            rms = float((audio ** 2).mean()) ** 0.5
+            self.level(min(1.0, rms * 12))
+        engine.feed(audio, rate)
+
+    def on_ready(self, session: int):
+        if session != self.session or not self.running or self.capture is not None:
             return
         try:
             self.capture_token += 1
             token = self.capture_token
-            self.capture = AudioCapture(self.source, self.segmenter.feed,
+            feed = self.segmenter.feed
+            if self.translation_provider == 'realtime':
+                engine = self.engine
+                feed = lambda audio, rate: self.feed_realtime_audio(session, engine, audio, rate)
+            self.capture = AudioCapture(self.source, feed,
                                         lambda text: self.capture_error(token, text))
             self.capture.start()
             self.window.set_status('듣는 중 · 영상의 소리를 재생해 주세요')
@@ -266,6 +317,10 @@ class Controller:
         self.session += 1
         self.capture_token += 1
         self.clear_queue()
+        if self.translation_provider == 'realtime':
+            # The transport closes/drains on its own thread; never wait on a
+            # network response from the GUI thread.
+            self.engine.stop()
         stop_error = None
         if self.capture:
             try:
@@ -284,6 +339,15 @@ class Controller:
         self.write_runtime_status()
 
     def reset(self):
+        if self.translation_provider == 'realtime':
+            was_running = self.running
+            source, language = getattr(self, 'source', ''), self.language
+            self.stop()
+            self.last_caption = ''
+            self.window.clear_captions()
+            if was_running and self.capture is None:
+                self.start(source, language)
+            return
         # Serialize with the audio callback: old samples cannot be enqueued with a new ID.
         with self.segmenter.lock:
             self.session += 1
@@ -397,7 +461,7 @@ class Controller:
         if hasattr(self.window, 'revise_caption'):
             for revision in result.get('revisions', []):
                 self.window.revise_caption(revision['id'], revision['korean'])
-        if result['original'] and (result.get('segment_id') is not None or result['original'] != self.last_caption):
+        if (result.get('realtime') and result.get('korean')) or (result['original'] and (result.get('segment_id') is not None or result['original'] != self.last_caption)):
             self.last_caption = result['original']
             args = (result['original'], result['korean'], result['language'],
                     result['end_delay'], result['uncertain'])

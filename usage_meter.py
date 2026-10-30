@@ -8,6 +8,7 @@ Cached input discounts, taxes and final provider billing are not included.
 """
 from decimal import Decimal
 import threading
+import math
 
 RATES = {
     ('openai', 'gpt-6-luna'): (Decimal('0.1'), Decimal('0.5')),
@@ -29,6 +30,14 @@ class UsageMeter:
             row = self.models.setdefault((provider, model), {
                 'calls': 0, 'successes': 0, 'input_tokens': 0, 'output_tokens': 0,
                 'unknown_calls': 0, 'estimated_usd': Decimal('0')})
+            if provider == 'openai-realtime' and model == 'gpt-realtime-translate':
+                seconds = usage.get('audio_seconds') if isinstance(usage, dict) else None
+                if type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0:
+                    row['audio_seconds'] = row.get('audio_seconds', 0) + seconds
+                    row['estimated_usd'] += Decimal(str(seconds)) * Decimal('0.034') / Decimal(60)
+                else:
+                    row['unknown_calls'] += 1
+                return
             row['calls'] += 1
             row['successes'] += int(bool(success))
             valid = isinstance(usage, dict) and all(
@@ -53,11 +62,14 @@ class UsageMeter:
         lines = [f'이번 실행 API 예상 비용: ${total:.6f}'
                  + (f' + 비용 미확인 {unknown}건' if unknown else '')]
         for (provider, model), row in rows:
+            if provider == 'openai-realtime' and model == 'gpt-realtime-translate':
+                lines.append(f'Realtime Translate: ${row["estimated_usd"]:.6f} · 전송 {row.get("audio_seconds", 0):.1f}초 기준 추정 (무음 포함)')
+                continue
             label = LABELS.get(model, model)
             cost = (f'${row["estimated_usd"]:.6f}' if (provider, model) in RATES
                     else '단가 미등록')
             lines.append(f'{label}: {cost} · 요청 {row["calls"]}건 / 번역 성공 {row["successes"]}건'
                          f' · 입력 {row["input_tokens"]:,} / 출력 {row["output_tokens"]:,} 토큰'
                          + (f' · 비용 미확인 {row["unknown_calls"]}건' if row['unknown_calls'] else ''))
-        lines.append('앱 실행 중 누적 · 응답 사용량 기준 · 할인·세금 제외 / 최종 청구액 아님')
+        lines.append('앱 실행 중 누적 · 텍스트는 응답 사용량, Realtime은 전송시간 추정 · 할인·세금 제외 / 최종 청구액 아님')
         return '\n'.join(lines)

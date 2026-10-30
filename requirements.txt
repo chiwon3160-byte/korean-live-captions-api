@@ -13,3 +13,4 @@ PyYAML==6.0.3
 requests==2.34.2
 tokenizers==0.22.2
 av==18.0.0
+-r requirements-realtime.txt

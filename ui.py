@@ -343,7 +343,8 @@ class CaptionWindow(QMainWindow):
                                  ("SOL 6.1", "gpt-6.1-sol")):
                 self.model_field.addItem(label + "  ▾", model)
         elif remote:
-            self.model_field.addItem(PROVIDERS[provider]["default_model"] + "  ▾", PROVIDERS[provider]["default_model"])
+            label = "Realtime Translate · 실시간 음성 번역" if provider == "realtime" else PROVIDERS[provider]["default_model"]
+            self.model_field.addItem(label + "  ▾", PROVIDERS[provider]["default_model"])
         self.model_field.setText(PROVIDERS[provider]["default_model"] if remote else "")
         self.api_key_field.clear()
         self.api_comment_check.setChecked(False)
@@ -351,6 +352,9 @@ class CaptionWindow(QMainWindow):
         for widget in (self.model_label, self.model_field, self.api_key_field, self.api_comment_check, self.api_notice):
             widget.setVisible(remote)
         self.reasoning_combo.setVisible(provider == "openai")
+        if provider == "realtime":
+            self.api_comment_check.hide()
+            self.api_notice.setText("선택한 출력 장치의 소리를 무음 구간까지 OpenAI로 바로 전송합니다. 분당 $0.034 (1시간 $2.04). 비용은 전송 음성 시간 기준 예상치입니다. 원문 자막·댓글 번역·추론 선택은 이 모드에서 지원하지 않습니다. 음성 출력은 재생하지 않고 한국어 자막만 표시합니다.")
 
     def _model_changed(self):
         sol = self.model_field.text().strip() == "gpt-6.1-sol"

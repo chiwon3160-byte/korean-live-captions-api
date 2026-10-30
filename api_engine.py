@@ -17,6 +17,7 @@ from engine import LocalEngine, TranslationValidationError, ROOT, configure_cuda
 
 PROVIDERS = {
     'openai': {'label': 'OpenAI', 'default_model': 'gpt-6-luna', 'env': 'OPENAI_API_KEY'},
+    'realtime': {'label': 'OpenAI Realtime · 음성 직접 번역', 'default_model': 'gpt-realtime-translate', 'env': 'OPENAI_API_KEY'},
     'anthropic': {'label': 'Anthropic', 'default_model': 'claude-haiku-5-5', 'env': 'ANTHROPIC_API_KEY'},
     'gemini': {'label': 'Google Gemini', 'default_model': 'gemini-3.8-flash', 'env': 'GEMINI_API_KEY'},
 }
@@ -71,7 +72,7 @@ class RemoteEngine(LocalEngine):
     """
     def __init__(self, status=lambda _: None, *, provider, model, api_key, reasoning_effort=None):
         super().__init__(status)
-        if provider not in PROVIDERS:
+        if provider not in PROVIDERS or provider == 'realtime':
             raise ValueError('지원하지 않는 API 제공사입니다.')
         if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', model):
             raise ValueError('모델 이름을 확인해 주세요.')

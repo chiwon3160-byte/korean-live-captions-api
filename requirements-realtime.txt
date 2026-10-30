@@ -1,0 +1,2 @@
+# Official PyPI release checked 2026-10-30. Optional streaming transport.
+websocket-client==1.9.2
