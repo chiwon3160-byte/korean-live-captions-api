@@ -14,7 +14,10 @@ import time
 from PySide6.QtCore import QObject, QTimer, Signal, QLockFile, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from capture import AudioCapture, list_sources
+if sys.platform == 'darwin':
+    from capture_mac import AudioCapture, list_sources  # BlackHole virtual device
+else:
+    from capture import AudioCapture, list_sources  # Windows WASAPI loopback
 from engine import LocalEngine, TranslationValidationError
 from api_engine import RemoteTranslationError
 from pipeline import Segmenter
@@ -23,6 +26,19 @@ from comment_service import CommentBroker, CommentServer
 from usage_meter import UsageMeter
 
 ROOT = Path(__file__).resolve().parent
+# Realtime bills for every second it streams, silence included. Stop after this
+# much continuous silence, exactly as if the user pressed Stop.
+REALTIME_SILENCE_STOP_SECONDS = 60
+# Web comments are text; Realtime is audio-only. In Realtime mode comments go to
+# this text model with the same OpenAI key, only when the user turns comments on.
+COMMENT_MODEL = 'gpt-6-luna'
+COMMENT_REASONING = 'none'
+# Block RMS of float samples in [-1, 1]. 1e-4 is -80 dBFS: above digital
+# silence (paused playback is exact zeros) and the 16-bit dither floor (about
+# -96 dBFS), well below quiet speech or background music, so any audible
+# content counts as sound. Deliberately conservative: never cut a real video.
+REALTIME_SILENCE_RMS = 1e-4
+REALTIME_SILENCE_MESSAGE = '소리가 60초 동안 없어 번역을 멈췄습니다(비용 절약). 다시 보려면 시작을 누르세요.'
 
 
 class Events(QObject):
@@ -50,12 +66,18 @@ class Controller:
         self.shutdown_event = threading.Event()
         self.last_level_time = 0
         self.last_caption = ''
+        self._clock = time.monotonic
+        self._last_sound_time = 0.0
+        self.silence_timer = QTimer()
+        self.silence_timer.setInterval(1000)
+        self.silence_timer.timeout.connect(self.check_realtime_silence)
         self.engine = (engine_factory or LocalEngine)()
         self._engine_lock = threading.RLock()
         self._engine_factory = engine_factory
         self.translation_provider = 'local'
         self.translation_description = '무료 로컬 번역'
         self.remote_comments = False
+        self.comment_engine = None  # Realtime only: separate Luna text engine for web comments.
         self._remote_comment_times = deque()
         self.comments = CommentBroker()
         self.comment_server = None
@@ -106,6 +128,7 @@ class Controller:
                 return False
             from api_engine import PROVIDERS, RemoteEngine, resolve_api_key
             provider = settings.get('provider', 'local')
+            comment_candidate = None
             if provider == 'local':
                 candidate = LocalEngine()
                 description = '무료 로컬 번역 · PC 안에서 처리'
@@ -126,9 +149,19 @@ class Controller:
                     from realtime_engine import RealtimeEngine
                     candidate = RealtimeEngine(model=model, api_key=key)
                     description = 'OpenAI Realtime · ' + model + ' · 음성 직접 전송'
+                    if settings.get('comments', False):
+                        # Realtime is audio-only; web comments are text, so they go
+                        # to Luna with the same OpenAI key (2026-10-31 user decision).
+                        comment_candidate = RemoteEngine(provider='openai', model=COMMENT_MODEL, api_key=key,
+                                                         reasoning_effort=COMMENT_REASONING)
+                        comment_candidate.usage_callback = self.record_api_usage
                 else:
                     effort = settings.get('reasoning_effort') or ('low' if model == 'gpt-6.1-sol' else 'none')
-                    candidate = RemoteEngine(provider=provider, model=model, api_key=key, reasoning_effort=effort)
+                    from api_engine import local_speech_available
+                    # No local Whisper (team release, laptops): speech-to-text runs on OpenAI too.
+                    speech = 'local' if local_speech_available() else 'cloud'
+                    candidate = RemoteEngine(provider=provider, model=model, api_key=key, reasoning_effort=effort,
+                                             speech=speech)
                     candidate.usage_callback = self.record_api_usage
                     description = PROVIDERS[provider]['label'] + ' · ' + model
                     if provider == 'openai':
@@ -147,7 +180,8 @@ class Controller:
             self.pending_api_setup = False
             self.translation_provider = provider
             self.translation_description = description
-            self.remote_comments = provider not in ('local', 'realtime') and bool(settings.get('comments', False))
+            self.remote_comments = provider != 'local' and bool(settings.get('comments', False))
+            self.comment_engine = comment_candidate
             self.window.clear_captions()
             if hasattr(self.window, 'set_translation_mode'):
                 self.window.set_translation_mode(provider, description)
@@ -173,10 +207,9 @@ class Controller:
 
     def process_comment(self, job):
         # Called only by the single model worker. Comments never touch speech context.
-        if self.translation_provider == 'realtime':
-            self.comments.finish(job['id'], error='Realtime은 음성 번역 전용입니다. 댓글은 OpenAI 텍스트 번역 모델을 선택해 주세요.')
-            return
-        if self.translation_provider != 'local' and not self.remote_comments:
+        realtime = self.translation_provider == 'realtime'
+        engine = self.comment_engine if realtime else self.engine
+        if self.translation_provider != 'local' and (not self.remote_comments or engine is None):
             self.comments.finish(job['id'], error='유료 API 댓글 전송이 꺼져 있습니다. 앱의 번역 설정에서 별도로 켜 주세요.')
             return
         if self.translation_provider != 'local':
@@ -189,8 +222,9 @@ class Controller:
             self._remote_comment_times.append(now)
         try:
             # Client wait is bounded; this is not a guarantee of instant GPU cancellation.
-            timeout = 2.5 if self.running else 8.0
-            korean = self.engine.translate_for_comment(job['text'], timeout=timeout,
+            # Realtime audio bypasses this worker, so a comment never delays speech there.
+            timeout = 2.5 if self.running and not realtime else 8.0
+            korean = engine.translate_for_comment(job['text'], timeout=timeout,
                                                        language=job['language'])
             self.comments.finish(job['id'], korean=korean)
         except RemoteTranslationError as exc:
@@ -243,6 +277,8 @@ class Controller:
         self.clear_queue()
         if self.translation_provider == 'realtime':
             sid = self.session
+            self._last_sound_time = self._clock()
+            self.silence_timer.start()
             self.window.set_status('Realtime 연결 중 · 연결 준비 후 소리를 전송합니다')
             try:
                 self.engine.start(
@@ -276,6 +312,8 @@ class Controller:
         if audio.size:
             rms = float((audio ** 2).mean()) ** 0.5
             self.level(min(1.0, rms * 12))
+            if rms >= REALTIME_SILENCE_RMS:
+                self._last_sound_time = self._clock()
         engine.feed(audio, rate)
 
     def on_ready(self, session: int):
@@ -291,6 +329,7 @@ class Controller:
             self.capture = AudioCapture(self.source, feed,
                                         lambda text: self.capture_error(token, text))
             self.capture.start()
+            self._last_sound_time = self._clock()  # Connection wait is not silence.
             self.window.set_status('듣는 중 · 영상의 소리를 재생해 주세요')
             self.write_runtime_status()
         except Exception as exc:
@@ -312,7 +351,20 @@ class Controller:
             self.stop()
             self.window.set_error(message)
 
+    def check_realtime_silence(self):
+        # GUI thread (QTimer). WASAPI may deliver no packets at all when
+        # playback is idle, so measure wall time since the last audible block.
+        if not self.running or self.translation_provider != 'realtime':
+            return False
+        if self._clock() - self._last_sound_time < REALTIME_SILENCE_STOP_SECONDS:
+            return False
+        self.stop()  # Same path as the Stop button.
+        if self.capture is None:
+            self.window.set_status(REALTIME_SILENCE_MESSAGE)
+        return True
+
     def stop(self):
+        self.silence_timer.stop()
         self.running = False
         self.session += 1
         self.capture_token += 1
@@ -507,21 +559,27 @@ def parse_launch_options(argv):
 
 
 def apply_launch_options(window, controller, options):
-    if not (options.terra or options.api):
+    from api_engine import local_speech_available
+    # Without local Whisper (team release, laptops) start on Realtime; Luna stays selectable.
+    realtime_only = not local_speech_available()
+    if not (options.terra or options.api or realtime_only):
         return
-    model = 'gpt-6.1-terra' if options.terra else 'gpt-6-luna'
-    window.provider_combo.setCurrentIndex(window.provider_combo.findData('openai'))
+    provider = 'realtime' if realtime_only else 'openai'
+    model = ('gpt-realtime-translate' if realtime_only
+             else 'gpt-6.1-terra' if options.terra else 'gpt-6-luna')
+    window.provider_combo.setCurrentIndex(window.provider_combo.findData(provider))
     window.model_field.setText(model)
     window.reasoning_combo.setCurrentIndex(window.reasoning_combo.findData(options.reasoning))
-    if options.api:
+    if options.api or realtime_only:
         from api_engine import resolve_api_key
         if not resolve_api_key('openai'):
             controller.pending_api_setup = True
-            window.translation_note.setText('API 버전 · Luna 6 · API 키 등록 대기')
+            window.translation_note.setText(('노트북 배포판(Realtime·Luna)' if realtime_only else 'API 버전 · Luna 6')
+                                            + ' · API 키 등록 대기')
             window.set_status('API 키를 입력하고 번역 설정 적용을 눌러 주세요.')
             window.settings_button.setChecked(True)
             return
-    if controller.apply_translation_settings({'provider': 'openai', 'model': model,
+    if controller.apply_translation_settings({'provider': provider, 'model': model,
                                              'reasoning_effort': options.reasoning, 'comments': False}):
         if options.autostart:
             window._request_start()
@@ -544,8 +602,18 @@ def main(engine_factory=None):
     if engine_factory is not None:
         window.setWindowTitle('한국어 실시간 자막 · 비교 후보판')
     window.show()
-    if (options.terra or options.api) and engine_factory is None:
+    if engine_factory is None:
         QTimer.singleShot(0, lambda: apply_launch_options(window, controller, options))
+    hotkeys = install_global_hotkeys(app, controller, window)  # Keep a reference.
+    app.aboutToQuit.connect(controller.close)
+    return app.exec()
+
+
+def install_global_hotkeys(app, controller, window, platform=None):
+    # RegisterHotKey is Win32-only; macOS uses the window buttons instead.
+    if (platform or sys.platform) != 'win32':
+        window.reset_button.setToolTip('전역 단축키는 Windows에서만 지원합니다. 자막창의 새 영상·중지 버튼을 사용하세요.')
+        return None
     from hotkeys import GlobalHotkeys
     hotkeys = GlobalHotkeys(app, controller.reset, controller.stop)
     if hotkeys.register():
@@ -553,8 +621,7 @@ def main(engine_factory=None):
     else:
         window.reset_button.setToolTip('전역 단축키가 사용 중입니다. 자막창에서 Ctrl+R 또는 새 영상 버튼을 사용하세요.')
     app.aboutToQuit.connect(hotkeys.unregister)
-    app.aboutToQuit.connect(controller.close)
-    return app.exec()
+    return hotkeys
 
 
 if __name__ == '__main__':

@@ -16,6 +16,8 @@ RATES = {
     ('openai', 'gpt-6.1-sol'): (Decimal('2'), Decimal('10')),
 }
 LABELS = {'gpt-6-luna': 'Luna 6', 'gpt-6.1-terra': 'Terra 6.1', 'gpt-6.1-sol': 'SOL 6.1'}
+# Speech-to-text (laptop Luna mode), USD per audio minute.
+STT_RATES = {'gpt-4o-mini-transcribe': Decimal('0.003')}
 
 
 class UsageMeter:
@@ -35,6 +37,17 @@ class UsageMeter:
                 if type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0:
                     row['audio_seconds'] = row.get('audio_seconds', 0) + seconds
                     row['estimated_usd'] += Decimal(str(seconds)) * Decimal('0.034') / Decimal(60)
+                else:
+                    row['unknown_calls'] += 1
+                return
+            if provider == 'openai-stt':
+                row['calls'] += 1
+                row['successes'] += int(bool(success))
+                seconds = usage.get('audio_seconds') if isinstance(usage, dict) else None
+                rate = STT_RATES.get(model)
+                if type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0 and rate is not None:
+                    row['audio_seconds'] = row.get('audio_seconds', 0) + seconds
+                    row['estimated_usd'] += Decimal(str(seconds)) * rate / Decimal(60)
                 else:
                     row['unknown_calls'] += 1
                 return
@@ -64,6 +77,10 @@ class UsageMeter:
         for (provider, model), row in rows:
             if provider == 'openai-realtime' and model == 'gpt-realtime-translate':
                 lines.append(f'Realtime Translate: ${row["estimated_usd"]:.6f} · 전송 {row.get("audio_seconds", 0):.1f}초 기준 추정 (무음 포함)')
+                continue
+            if provider == 'openai-stt':
+                lines.append(f'음성 인식: ${row["estimated_usd"]:.6f} · 말소리 {row.get("audio_seconds", 0):.1f}초 · 요청 {row["calls"]}건'
+                             + (f' · 비용 미확인 {row["unknown_calls"]}건' if row['unknown_calls'] else ''))
                 continue
             label = LABELS.get(model, model)
             cost = (f'${row["estimated_usd"]:.6f}' if (provider, model) in RATES

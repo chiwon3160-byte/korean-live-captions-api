@@ -1,5 +1,5 @@
 {
-  "edition": "api-luna-default-windows-source",
+  "edition": "api-windows-and-mac-realtime-source",
   "files": {
     ".env.local.example": {
       "bytes": 16,
@@ -9,37 +9,41 @@
       "bytes": 68,
       "sha256": "56962d34bf17273ab7651f82f7b2ff489ef2923060c50c61e9ed1bfc4ca84f7b"
     },
+    "API-ONLY-EDITION.txt": {
+      "bytes": 144,
+      "sha256": "fed1f969c6448fce29fcc4c8f2ab4aa5fe687fac6e94f087d26124952f12b0f9"
+    },
     "CODEX-INSTALL-SLIDES.html": {
-      "bytes": 75713,
-      "sha256": "f9bd719a173b957d1aa057d670b84acc1ac378de7df70d42fe2250eee8be2cab"
+      "bytes": 129417,
+      "sha256": "7be0cc313f5cdc26f1c16130dfcdbe55c434e655b278fcaf250e54c6762dd372"
     },
     "CODEX-INSTALL.md": {
-      "bytes": 11848,
-      "sha256": "c0375452873a8dd9e683af5ffef4dbe5c75b0ebeb7862fb8808c634dd6db823b"
+      "bytes": 14577,
+      "sha256": "a8df25db2da574d93f47515a63bf139758a3b8e81fb6c033625266b0f4f39d59"
     },
     "README.md": {
-      "bytes": 10256,
-      "sha256": "9267beb19e9d29c28de32f0d820a368050adc6dfac885f76d41cd1b1c86341d1"
+      "bytes": 12323,
+      "sha256": "10b42abeef07ff8cf0e26b9b05b7eb9c171639dbdac3f30f23664a6edb79832f"
     },
     "START-HERE.txt": {
-      "bytes": 1505,
-      "sha256": "7eedd01950fb53b7bafcae3b163dce72344f5056223895152cefdfdfccaf07ab"
+      "bytes": 2295,
+      "sha256": "86ee91f7237e567d7aceb68bf3cb6d8de8ab8ee5a057c57569ad002b93595ce3"
+    },
+    "Start API Captions.command": {
+      "bytes": 308,
+      "sha256": "0be48170d82811ef95de3e0bb46e883a3635328784448f45807fc971aa47a707"
     },
     "Start API Captions.vbs": {
       "bytes": 321,
       "sha256": "4ab28b1ebedb3f2e6a1a297540f57b7746695aec294819d49512883582b79077"
     },
     "api_engine.py": {
-      "bytes": 12663,
-      "sha256": "c6eb8b9390b071a7e51f09e46fe6c84ad76a5710df39893b92294e64690b23fb"
+      "bytes": 17397,
+      "sha256": "a8a7daa72b2ef09f525d9f1d6f396fbaf9dadf5216ef29078012f53b53c35a47"
     },
     "app.py": {
-      "bytes": 28155,
-      "sha256": "603d2433cb6253d0de04ced703f3d1db7fa91ee53016e18d4e40755a43346895"
-    },
-    "bootstrap_models.py": {
-      "bytes": 8636,
-      "sha256": "4d45dea910606b3665d566cbce28cba2a792c219e023bff96f493a3b96de1a65"
+      "bytes": 32225,
+      "sha256": "737511a0e9ea6b15240b391aee8225756b56ef873bde6f8d3687dbf0eaa2f10b"
     },
     "browser-extension/background.js": {
       "bytes": 4826,
@@ -77,6 +81,10 @@
       "bytes": 7611,
       "sha256": "8fcf0f856ce9f007d00f6dc8f8daa1c3a58f0c2964d0681b7a5394942ffab735"
     },
+    "capture_mac.py": {
+      "bytes": 7392,
+      "sha256": "9678beedb39449ca6523a6a306d32fa5d6d063e71c33ada9e4c47deffa5728e4"
+    },
     "comment_service.py": {
       "bytes": 14253,
       "sha256": "02dde3d116624dfa71dce04da01d82778458c9f2a292d463c8afaf170cdd3b16"
@@ -93,10 +101,6 @@
       "bytes": 775,
       "sha256": "be44cf92ea317cefe6a2a80dd787b58daba70c4b0d9098f6c9e82cbdc9f75aa2"
     },
-    "model-lock.json": {
-      "bytes": 1415,
-      "sha256": "2a28235c50576aa1fd7bea83041e9bc79a87bfcf3399fdf0c5cc490024d9cd91"
-    },
     "overlay.py": {
       "bytes": 8236,
       "sha256": "1281b987221201bcd86309b54ca533b0eb7d4b2e8eb372e9479a9aea00471e6c"
@@ -109,29 +113,33 @@
       "bytes": 16422,
       "sha256": "1101ae45aa392fd45c18de2e3a8780f7547929867235e8e957c02279686c6c2f"
     },
+    "requirements-light.txt": {
+      "bytes": 338,
+      "sha256": "3799219b915531a908975a5d3d17b90b326a124ea16775e9798b4f7e1f28778c"
+    },
     "requirements-realtime.txt": {
       "bytes": 98,
       "sha256": "f79c7c1a36b6c41b704b10d3fa34a7089b5f8b337ae857268f3c1c521bca3138"
     },
-    "requirements.txt": {
-      "bytes": 349,
-      "sha256": "245a92172b96619093963fc3f2aa3905aaf6f4133b59a296b4f07d0c8f2de230"
-    },
     "run_app.py": {
-      "bytes": 672,
-      "sha256": "6fcc2a82892790c148def118438fa8da3a1328efe64ad6552e8c5a28162f7cdc"
+      "bytes": 838,
+      "sha256": "70985d802cff34184b9b8f018186138e0d82b9a94ab7a663467b6a102461e741"
     },
     "setup-api.ps1": {
-      "bytes": 1672,
-      "sha256": "ed95dd864df81cb1760203639510d01864ab23790d722af1670bcd4f08eeb441"
+      "bytes": 1303,
+      "sha256": "003d89b7db5921fbf98935526dc46bc2f8948b2487eff92abb86d80207cd5252"
+    },
+    "setup-mac.sh": {
+      "bytes": 1011,
+      "sha256": "5d2a9d133de86a3797f7840908ff0314c0057c3294c8c49b73bc27fe1d9cb1ee"
     },
     "ui.py": {
-      "bytes": 38017,
-      "sha256": "2174a7d692db272d29ddeab2489980d5d0f2ec3f23f5c94e6e9b3740e227d539"
+      "bytes": 43724,
+      "sha256": "0ff54be7c8ab31051cb801fa0ce0b4aea5b23d17b9cb783e8375429b166313ee"
     },
     "usage_meter.py": {
-      "bytes": 3964,
-      "sha256": "c30b95e1749e35313081d7f3e9910b4d02feaddcc779e85247f52251012b7770"
+      "bytes": 5053,
+      "sha256": "456f4b3ecff9088b906e635609c25af2845ae2d266644ccb5bca9dd8d85d294b"
     }
   }
 }

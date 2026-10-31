@@ -1,0 +1,2 @@
+Team release: captions = OpenAI Realtime, Chrome comments = GPT-6 Luna text.
+No local models, Whisper, CUDA or Ollama. Do not delete this file.

@@ -6,6 +6,8 @@ from collections import deque
 from overlay import SubtitleOverlay
 import math
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QTimer, Signal, QUrl
@@ -15,6 +17,35 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSlider,
     QSpinBox, QVBoxLayout, QWidget, QLayout, QDialog, QLineEdit, QApplication,
 )
+
+API_COMMENT_LABEL = "댓글도 유료 API로 전송 · 음성 중지 중에도 과금"
+REALTIME_COMMENT_LABEL = "크롬 댓글 번역(선택) · GPT-6 Luna로 번역, 켤 때만 비용"
+TEAM_COMMENT_LABEL = "틱톡 댓글 번역 켜기 · GPT-6 Luna, 켤 때만 비용"
+# Team release menu. Hourly figures are app estimates (usage_meter.py rates), not bills.
+TEAM_MODELS = (
+    ("GPT Realtime · 실시간 고급 모델 · 1시간 약 $2", "realtime"),
+    ("GPT-6 Luna · 가성비 모델 · 1시간 약 $0.2 · 자막 2~3초 더 늦음", "openai"),
+)
+TEAM_NOTICES = {
+    "realtime": "말하는 동안 바로 번역해 자막이 가장 빨리 뜹니다(말 시작 뒤 약 3~5초). 켜 둔 동안 소리 시간만큼 과금되니 다 보면 ‘중지’를 눌러 주세요. 소리가 60초 없으면 알아서 멈춥니다.",
+    "openai": "소리를 4초씩 모아 글자로 바꾼 뒤 번역해서 Realtime보다 자막이 2~3초 늦게 뜹니다. 말소리가 있을 때만 보내 비용이 Realtime의 10분의 1 정도입니다.",
+}
+
+
+EXTENSIONS_URL = "chrome://extensions"
+
+
+def _chrome_path() -> str:
+    """Chrome 실행 파일 위치. chrome:// 주소는 다른 앱이 URL로 열 수 없어 Chrome에 직접 넘긴다."""
+    if sys.platform == "darwin":
+        app = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        return app if os.path.isfile(app) else ""
+    for env in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(env, "")
+        path = os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")
+        if base and os.path.isfile(path):
+            return path
+    return ""
 
 
 def _label(text: str, name: str = "", wrap: bool = False) -> QLabel:
@@ -79,6 +110,7 @@ class CaptionWindow(QMainWindow):
         self._comment_setup_dialog = None
         self._translation_mode = "local"
         self._translation_description = "무료 · PC 안에서 처리"
+        self._comments_on = False  # Paid comment translation as last applied.
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -117,12 +149,20 @@ class CaptionWindow(QMainWindow):
         settings_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         settings_layout.setContentsMargins(0, 0, 0, 0)
         settings_layout.addLayout(source_row)
-        from api_engine import PROVIDERS
+        from api_engine import PROVIDERS, local_speech_available
+        # Team release (no local Whisper): only the two OpenAI models the team uses.
+        self._api_only = not local_speech_available()
         self.provider_combo = QComboBox()
         self.provider_combo.setAccessibleName("번역 방식")
-        self.provider_combo.addItem("무료 로컬 · PC 안에서 처리", "local")
-        for key, spec in PROVIDERS.items():
-            self.provider_combo.addItem(spec["label"] + " · 유료 API", key)
+        self.provider_label = _label("자막 모델 · 눌러서 고르세요 ▼", "scope")
+        self.provider_label.setVisible(self._api_only)
+        if self._api_only:
+            for text, key in TEAM_MODELS:
+                self.provider_combo.addItem(text, key)
+        else:
+            self.provider_combo.addItem("무료 로컬 · PC 안에서 처리", "local")
+            for key, spec in PROVIDERS.items():
+                self.provider_combo.addItem(spec["label"] + " · 유료 API", key)
         self.model_field = ModelSelector()
         self.model_label = _label("번역 모델 · 아래 메뉴를 눌러 선택하세요 ▼", "scope")
         self.model_field.setAccessibleName("API 모델")
@@ -136,13 +176,13 @@ class CaptionWindow(QMainWindow):
         self.api_key_field.setAccessibleName("API 키 · 이번 실행에서만 사용")
         self.api_key_field.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key_field.setPlaceholderText("API 키 · 비우면 환경변수 또는 .env.local 사용")
-        self.api_comment_check = QCheckBox("댓글도 유료 API로 전송 · 음성 중지 중에도 과금")
+        self.api_comment_check = QCheckBox(API_COMMENT_LABEL)
         self.api_comment_check.setChecked(False)
         self.apply_translation_button = QPushButton("번역 설정 적용")
         self.translation_note = _label("현재: 무료 로컬 · PC 안에서 처리", "scope", True)
         self.api_notice = _label("API를 적용하면 음성 원문과 최근 두 구간 문맥을 선택한 제공사에 보내며 비용이 발생합니다. 음성 파일은 보내지 않습니다. 키는 이번 실행에서만 사용합니다. 댓글 전송은 별도로 켜야 합니다.", "scope", True)
         self.api_notice.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        for widget in (self.provider_combo, self.model_label, self.model_field, self.reasoning_combo, self.api_key_field,
+        for widget in (self.provider_label, self.provider_combo, self.model_label, self.model_field, self.reasoning_combo, self.api_key_field,
                        self.api_comment_check, self.api_notice,
                        self.apply_translation_button):
             settings_layout.addWidget(widget)
@@ -352,9 +392,17 @@ class CaptionWindow(QMainWindow):
         for widget in (self.model_label, self.model_field, self.api_key_field, self.api_comment_check, self.api_notice):
             widget.setVisible(remote)
         self.reasoning_combo.setVisible(provider == "openai")
+        self.api_comment_check.setText(REALTIME_COMMENT_LABEL if provider == "realtime" else API_COMMENT_LABEL)
         if provider == "realtime":
-            self.api_comment_check.hide()
-            self.api_notice.setText("선택한 출력 장치의 소리를 무음 구간까지 OpenAI로 바로 전송합니다. 분당 $0.034 (1시간 $2.04). 비용은 전송 음성 시간 기준 예상치입니다. 원문 자막·댓글 번역·추론 선택은 이 모드에서 지원하지 않습니다. 음성 출력은 재생하지 않고 한국어 자막만 표시합니다.")
+            self.api_notice.setText("선택한 출력 장치의 소리를 무음 구간까지 OpenAI로 바로 전송합니다. 분당 $0.034 (1시간 $2.04). 비용은 전송 음성 시간 기준 예상치입니다. 원문 자막·추론 선택은 이 모드에서 지원하지 않습니다. 음성 출력은 재생하지 않고 한국어 자막만 표시합니다. 소리가 60초 동안 없으면 자동으로 멈춥니다. 크롬 댓글 번역은 켤 때만 같은 키로 GPT-6 Luna 텍스트 번역에 보내며, 그때만 비용이 듭니다.")
+        if self._api_only:
+            # Fixed models: Realtime Translate, or Luna with reasoning none.
+            self.model_field.setText(PROVIDERS[provider]["default_model"])
+            self.reasoning_combo.setCurrentIndex(0)
+            for widget in (self.model_label, self.model_field, self.reasoning_combo):
+                widget.setVisible(False)
+            self.api_comment_check.setText(TEAM_COMMENT_LABEL)
+            self.api_notice.setText(TEAM_NOTICES[provider])
 
     def _model_changed(self):
         sol = self.model_field.text().strip() == "gpt-6.1-sol"
@@ -378,6 +426,7 @@ class CaptionWindow(QMainWindow):
     def set_translation_mode(self, provider, description):
         self._translation_mode = provider
         self._translation_description = description
+        self._comments_on = provider != "local" and self.api_comment_check.isChecked()
         self.translation_note.setText("현재: " + description)
         self.api_key_field.clear()
         if self._comment_setup_dialog is not None:
@@ -401,10 +450,59 @@ class CaptionWindow(QMainWindow):
         box.setContentsMargins(22, 20, 22, 20)
         box.setSpacing(14)
         box.addWidget(_label("Chrome에서 댓글 바로 아래에 한국어로", "title", True))
-        box.addWidget(_label("댓글 처리: " + self._translation_description + ". API 모드에서는 설정의 댓글 전송을 별도로 켜야 합니다. 음성 자막 처리를 우선합니다.", "scope", True))
+        handling = ("GPT-6 Luna 텍스트 번역(Realtime은 음성 전용이라 댓글은 Luna로 보냄)"
+                    if self._translation_mode == "realtime" else
+                    "GPT-6 Luna 텍스트 번역" if self._api_only else self._translation_description)
+        box.addWidget(_label("댓글 처리: " + handling + ". 음성 자막 처리를 우선합니다.", "scope", True))
+        if self._translation_mode != "local":
+            # One obvious switch here instead of a checkbox hidden in settings.
+            state_row = QHBoxLayout()
+            state_row.addWidget(_label("지금 댓글 번역: " + ("켜짐 ✓" if self._comments_on else "꺼짐"), "status", True), 1)
+            if not self._comments_on:
+                enable_button = QPushButton("댓글 번역 켜기" if not self._running else "중지 후 켤 수 있어요")
+                enable_button.setObjectName("commentEnableButton")
+                enable_button.setEnabled(not self._running)
+
+                def enable_comments() -> None:
+                    self.api_comment_check.setChecked(True)
+                    self._apply_translation_settings()  # Success closes this dialog.
+                    if self._comments_on:
+                        self.comment_setup_requested.emit()
+
+                enable_button.clicked.connect(enable_comments)
+                state_row.addWidget(enable_button)
+            box.addLayout(state_row)
         if status:
             box.addWidget(_label(str(status), "status", True))
-        box.addWidget(_label("1. Chrome 주소창에 chrome://extensions 를 입력하세요.\n2. 오른쪽 위 ‘개발자 모드’를 켜고 ‘압축해제된 확장 프로그램을 로드합니다’를 누르세요. 아래 폴더를 선택하면 됩니다.", wrap=True))
+        box.addWidget(_label("1. ‘Chrome에서 열기’를 누르세요. 안 열리면 ‘주소 복사’ 뒤 Chrome 주소창에 붙여 넣으세요.", wrap=True))
+        url_row = QHBoxLayout()
+        url_field = QLineEdit(EXTENSIONS_URL)
+        url_field.setObjectName("commentExtensionsUrl")
+        url_field.setReadOnly(True)
+        url_field.setStyleSheet("background: #222a36; border: 1px solid #414d60; border-radius: 5px; padding: 8px;")
+        url_row.addWidget(url_field, 1)
+        url_copy_button = QPushButton("주소 복사")
+        url_copy_button.setObjectName("commentUrlCopyButton")
+        url_copy_button.clicked.connect(lambda: QApplication.clipboard().setText(EXTENSIONS_URL))
+        url_row.addWidget(url_copy_button)
+        chrome_button = QPushButton("Chrome에서 열기")
+        chrome_button.setObjectName("commentOpenChromeButton")
+
+        def open_extensions() -> None:
+            chrome = _chrome_path()
+            try:
+                if not chrome:
+                    raise OSError
+                subprocess.Popen([chrome, EXTENSIONS_URL])
+                chrome_button.setText("열었습니다")
+            except OSError:
+                QApplication.clipboard().setText(EXTENSIONS_URL)
+                chrome_button.setText("주소를 복사했습니다")
+
+        chrome_button.clicked.connect(open_extensions)
+        url_row.addWidget(chrome_button)
+        box.addLayout(url_row)
+        box.addWidget(_label("2. 오른쪽 위 ‘개발자 모드’를 켜고 ‘압축해제된 확장 프로그램을 로드합니다’를 누르세요. 아래 폴더를 선택하면 됩니다.", wrap=True))
         folder_row = QHBoxLayout()
         folder_label = _label(str(extension_path), "scope", True)
         folder_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)

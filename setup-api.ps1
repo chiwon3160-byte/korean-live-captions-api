@@ -6,20 +6,16 @@ if (-not (Get-Command py.exe -ErrorAction SilentlyContinue)) {
 }
 & py -3.12 -c "import struct; assert struct.calcsize('P') == 8, '64-bit Python required'"
 if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 (64-bit) is required.' }
-if (-not (Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue)) {
-    throw 'Local speech recognition requires an NVIDIA CUDA GPU and a working NVIDIA driver. CPU-only, AMD and Intel GPU execution is not implemented.'
-}
-& nvidia-smi.exe --query-gpu=name,memory.total --format=csv,noheader
-if ($LASTEXITCODE -ne 0) { throw 'NVIDIA driver check failed. Fix the driver before downloading the speech model.' }
+# Team release (2026-10-31 user decision): API only on every PC, GPU or not.
+# Captions = OpenAI Realtime, comments = GPT-6 Luna text. No CUDA, Whisper,
+# speech model download or Ollama, even when an NVIDIA GPU is present.
+$requirements = 'requirements-light.txt'
 if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
     & py -3.12 -m venv .venv
     if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 environment setup failed.' }
 }
-& '.venv\Scripts\python.exe' -m pip install -r requirements.txt
+& '.venv\Scripts\python.exe' -m pip install -r $requirements
 if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 & '.venv\Scripts\python.exe' -m pip check
 if ($LASTEXITCODE -ne 0) { throw 'Dependency conflict detected.' }
-# API translation needs only the local speech model. No Ollama or Qwen download.
-& '.venv\Scripts\python.exe' bootstrap_models.py --only whisper
-if ($LASTEXITCODE -ne 0) { throw 'Speech model setup failed. Rerun this script to resume downloads.' }
-Write-Host 'Ready. Double-click Start API Captions.vbs and enter your own OpenAI API key in the app.'
+Write-Host 'Ready (API only). Double-click Start API Captions.vbs and enter your OpenAI API key in the app.'

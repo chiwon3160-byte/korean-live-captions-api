@@ -7,13 +7,21 @@ https://ai.google.dev/api/generate-content
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import urllib.error
 import urllib.request
+import wave
+
+import numpy as np
 
 from engine import LocalEngine, TranslationValidationError, ROOT, configure_cuda
+
+# Team release without local Whisper: speech-to-text over the OpenAI API.
+STT_URL = 'https://api.openai.com/v1/audio/transcriptions'
+STT_MODEL = 'gpt-4o-mini-transcribe'
 
 PROVIDERS = {
     'openai': {'label': 'OpenAI', 'default_model': 'gpt-6-luna', 'env': 'OPENAI_API_KEY'},
@@ -21,6 +29,26 @@ PROVIDERS = {
     'anthropic': {'label': 'Anthropic', 'default_model': 'claude-haiku-5-5', 'env': 'ANTHROPIC_API_KEY'},
     'gemini': {'label': 'Google Gemini', 'default_model': 'gemini-3.8-flash', 'env': 'GEMINI_API_KEY'},
 }
+
+
+# Present only in the team release ZIP (release/build_release.py --api-only).
+API_ONLY_MARKER = 'API-ONLY-EDITION.txt'
+
+
+def local_speech_available():
+    """True only where the NVIDIA install put local Whisper (faster-whisper) in place.
+
+    Realtime-only installs (Windows without NVIDIA, macOS) skip those packages;
+    Luna/Anthropic/Gemini and free local modes all need local Whisper.
+    """
+    import importlib.util
+    import sys
+    if (ROOT / API_ONLY_MARKER).exists():
+        return False  # Team release: Realtime captions only, even on an NVIDIA PC.
+    try:
+        return sys.platform == 'win32' and importlib.util.find_spec('faster_whisper') is not None
+    except (ImportError, ValueError):  # find_spec raises for blocked/broken entries.
+        return False
 
 def resolve_api_key(provider, entered=''):
     """Read an explicitly supplied local key without logging or executing dotenv."""
@@ -54,6 +82,10 @@ SYSTEM_PROMPT = (
 )
 
 
+def _plain(word):
+    return re.sub(r'\W', '', word).lower()
+
+
 class RemoteTranslationError(TranslationValidationError):
     """Sanitized provider failure safe to display without source, key or body."""
 
@@ -70,10 +102,14 @@ class RemoteEngine(LocalEngine):
     not a total response deadline (slow trickle reads can take longer). Stopping
     the UI cannot retract a submitted billable request. No automatic retries.
     """
-    def __init__(self, status=lambda _: None, *, provider, model, api_key, reasoning_effort=None):
+    def __init__(self, status=lambda _: None, *, provider, model, api_key, reasoning_effort=None, speech='local'):
         super().__init__(status)
         if provider not in PROVIDERS or provider == 'realtime':
             raise ValueError('지원하지 않는 API 제공사입니다.')
+        if speech not in ('local', 'cloud') or (speech == 'cloud' and provider != 'openai'):
+            raise ValueError('음성 인식 방식을 확인해 주세요.')
+        self.speech = speech
+        self._last_heard = ''
         if not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', model):
             raise ValueError('모델 이름을 확인해 주세요.')
         if not isinstance(api_key, str) or not api_key.strip() or len(api_key) > 4096 or any(c.isspace() for c in api_key):
@@ -86,10 +122,14 @@ class RemoteEngine(LocalEngine):
         self.usage_callback = None
 
     def reset_context(self):
-        pass  # History is supplied by the controller, never retained here.
+        self._last_heard = ''  # Translation history is supplied by the controller.
 
     def load(self):
         if self.ready:
+            return
+        if self.speech == 'cloud':
+            self.ready = True  # Nothing to load: speech-to-text is an API call too.
+            self.status('준비 완료 · 음성 인식·번역 모두 OpenAI API')
             return
         self.status('PC 음성 인식 모델 준비 중… 번역은 선택한 API를 사용합니다')
         configure_cuda()
@@ -105,6 +145,60 @@ class RemoteEngine(LocalEngine):
             raise RuntimeError('PC 음성 인식 모델을 준비하지 못했습니다.') from None
         self.ready = True
         self.status('준비 완료 · 유료 API 번역')
+
+    def transcribe(self, audio, language, overlap_seconds=0.0):
+        if self.speech == 'local':
+            return super().transcribe(audio, language, overlap_seconds)
+        samples = np.asarray(audio, dtype=np.float32)
+        if not samples.size:
+            return '', language, False
+        wav = io.BytesIO()
+        with wave.open(wav, 'wb') as out:  # Segmenter delivers 16 kHz mono float.
+            out.setnchannels(1)
+            out.setsampwidth(2)
+            out.setframerate(16000)
+            out.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
+        fields = {'model': STT_MODEL, 'response_format': 'json'}
+        if language in ('en', 'es'):
+            fields['language'] = language
+        boundary = 'captions' + os.urandom(12).hex()
+        body = b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                        for k, v in fields.items())
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="speech.wav"\r\n'
+                 'Content-Type: audio/wav\r\n\r\n').encode() + wav.getvalue() + f'\r\n--{boundary}--\r\n'.encode()
+        request = urllib.request.Request(STT_URL, data=body, method='POST', headers={
+            'Authorization': 'Bearer ' + self._api_key,
+            'Content-Type': 'multipart/form-data; boundary=' + boundary})
+        success = False
+        try:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+            with opener.open(request, timeout=8) as response:
+                raw = response.read(65537)
+            if len(raw) > 65536:
+                raise ValueError('response too large')
+            text = json.loads(raw).get('text', '')
+            if not isinstance(text, str):
+                raise ValueError('invalid transcript')
+            success = True
+        except Exception as exc:
+            # Same sanitized categories as translation; never the body, URL or key.
+            raise RemoteTranslationError('음성 인식 · ' + self._failure_message(exc)) from None
+        finally:
+            if self.usage_callback is not None:
+                try:
+                    self.usage_callback('openai-stt', STT_MODEL,
+                                        {'audio_seconds': samples.size / 16000}, success)
+                except Exception:
+                    pass  # Cost UI failure must never break captions.
+        words = text.split()
+        if overlap_seconds and words and self._last_heard:
+            # The 0.3 s overlap can repeat the previous segment's last word.
+            if _plain(words[0]) and _plain(words[0]) == _plain(self._last_heard.split()[-1]):
+                words = words[1:]
+        text = ' '.join(words).strip()
+        if text:
+            self._last_heard = text
+        return text, language, False
 
     def _request(self, user, timeout, max_tokens):
         headers = {'Content-Type': 'application/json'}
