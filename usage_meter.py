@@ -17,7 +17,7 @@ RATES = {
 }
 LABELS = {'gpt-6-luna': 'Luna 6', 'gpt-6.1-terra': 'Terra 6.1', 'gpt-6.1-sol': 'SOL 6.1'}
 # Speech-to-text (laptop Luna mode), USD per audio minute.
-STT_RATES = {'gpt-4o-mini-transcribe': Decimal('0.003')}
+STT_RATES = {'gpt-transcribe': Decimal('0.0045')}  # developers.openai.com/api/docs/models/gpt-transcribe, 2026-10-31
 
 
 class UsageMeter:

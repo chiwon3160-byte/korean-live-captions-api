@@ -20,8 +20,10 @@ import numpy as np
 from engine import LocalEngine, TranslationValidationError, ROOT, configure_cuda
 
 # Team release without local Whisper: speech-to-text over the OpenAI API.
+# gpt-transcribe: $0.0045/min, the recommended file model; the gpt-4o/whisper-1
+# transcribe models leave the API 2027-02-26 (developers.openai.com/api/docs/deprecations, checked 2026-10-31).
 STT_URL = 'https://api.openai.com/v1/audio/transcriptions'
-STT_MODEL = 'gpt-4o-mini-transcribe'
+STT_MODEL = 'gpt-transcribe'
 
 PROVIDERS = {
     'openai': {'label': 'OpenAI', 'default_model': 'gpt-6-luna', 'env': 'OPENAI_API_KEY'},
@@ -158,12 +160,13 @@ class RemoteEngine(LocalEngine):
             out.setsampwidth(2)
             out.setframerate(16000)
             out.writeframes((np.clip(samples, -1, 1) * 32767).astype('<i2').tobytes())
-        fields = {'model': STT_MODEL, 'response_format': 'json'}
+        fields = [('model', STT_MODEL), ('response_format', 'json')]
         if language in ('en', 'es'):
-            fields['language'] = language
+            # gpt-transcribe takes a `languages` list instead of `language`.
+            fields.append(('languages[]', language))
         boundary = 'captions' + os.urandom(12).hex()
         body = b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
-                        for k, v in fields.items())
+                        for k, v in fields)
         body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="speech.wav"\r\n'
                  'Content-Type: audio/wav\r\n\r\n').encode() + wav.getvalue() + f'\r\n--{boundary}--\r\n'.encode()
         request = urllib.request.Request(STT_URL, data=body, method='POST', headers={
